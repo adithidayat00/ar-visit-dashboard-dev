@@ -2,9 +2,39 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
+# =========================
+# CONFIG
+# =========================
 st.set_page_config(page_title="AR Visit Optimization", layout="wide")
 
-st.title("AR Visit Route Optimization Dashboard")
+# =========================
+# LOGIN
+# =========================
+PASSWORD = "Password1100!"  # GANTI SESUAI LO
+
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+
+    st.title("🔐 Login Required")
+
+    pwd = st.text_input("Enter Password", type="password")
+
+    if st.button("Login"):
+        if pwd == PASSWORD:
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Password salah")
+
+    st.stop()
+
+# =========================
+# TITLE
+# =========================
+st.title("AR Visit Route Optimization Dashboard 🚀")
+st.caption("Developed for internal use")
 
 # =========================
 # FILE UPLOAD
@@ -34,12 +64,24 @@ if file is not None:
     df = df[df["Over"] >= 0]
 
     # =========================
-    # CACHE PROCESSING
+    # PROCESSING
     # =========================
     @st.cache_data
     def process_data(df):
 
-        df["Priority"] = df["Saldo"] * df["Over"]
+        df["Priority"] = (df["Saldo"] * 0.7 + df["Over"] * 0.3)
+
+        def aging_bucket(over):
+            if over <= 30:
+                return "0-30"
+            elif over <= 60:
+                return "31-60"
+            elif over <= 90:
+                return "61-90"
+            else:
+                return "90+"
+
+        df["Aging"] = df["Over"].apply(aging_bucket)
 
         df_full = df.sort_values(
             by=["Kd_Pos", "Priority"],
@@ -70,7 +112,6 @@ if file is not None:
     # =========================
     st.sidebar.header("Filter")
 
-    # AUTO SCALE OVER
     min_val = int(df_full["Over"].min())
     max_val = int(df_full["Over"].max())
 
@@ -81,7 +122,6 @@ if file is not None:
         (min_val, min(max_val, 60))
     )
 
-    # MULTI SELECT FILTERS
     arho_list = st.sidebar.multiselect(
         "Filter ARHO",
         options=sorted(df_full["ARHO"].dropna().unique())
@@ -97,7 +137,6 @@ if file is not None:
         options=sorted(df_full["Kd_Pos"].dropna().unique())
     )
 
-    # APPLY FILTER
     df_full = df_full[
         (df_full["Over"] >= min_over) & (df_full["Over"] <= max_over)
     ]
@@ -114,7 +153,7 @@ if file is not None:
     # =========================
     # SEARCH
     # =========================
-    search = st.text_input("🔍 Search (All Columns)")
+    search = st.text_input("🔍 Search")
 
     if search:
         mask = df_full.apply(
@@ -135,83 +174,48 @@ if file is not None:
     # CHART
     # =========================
     st.subheader("📊 Saldo per Kode Pos")
-
     chart_data = df_full.groupby("Kd_Pos")["Saldo"].sum().sort_values(ascending=False)
     st.bar_chart(chart_data)
 
+    st.subheader("📊 Aging Distribution")
+    st.bar_chart(df_full["Aging"].value_counts())
+
     # =========================
-    # EXPORT FUNCTION
+    # TOP PRIORITY
     # =========================
-    def convert_to_excel(df_full, df_route):
+    st.subheader("🔥 Top 20 Priority")
+
+    top_global = df_full.sort_values(by="Priority", ascending=False).head(20)
+    st.dataframe(top_global, use_container_width=True)
+
+    # =========================
+    # EXPORT
+    # =========================
+    def convert_to_excel(df_full, df_route, top_global):
 
         output = BytesIO()
         writer = pd.ExcelWriter(output, engine='xlsxwriter')
-        workbook = writer.book
 
         df_full.to_excel(writer, index=False, sheet_name='Full_Data')
-        ws1 = writer.sheets['Full_Data']
-
-        cluster_col = df_full.columns.get_loc("Kd_Pos")
-        bold_center = workbook.add_format({'bold': True, 'align': 'center'})
-
-        start_row = 0
-        while start_row < len(df_full):
-            kode = df_full.iloc[start_row]["Kd_Pos"]
-            end_row = start_row
-
-            while end_row + 1 < len(df_full) and df_full.iloc[end_row+1]["Kd_Pos"] == kode:
-                end_row += 1
-
-            ws1.merge_range(start_row+1, cluster_col, end_row+1, cluster_col, kode, bold_center)
-            start_row = end_row + 1
-
-        df_route.to_excel(writer, index=False, sheet_name='Rute_Kunjungan')
-        ws2 = writer.sheets['Rute_Kunjungan']
-
-        yellow = workbook.add_format({'bg_color': '#FFF59D'})
-        orange = workbook.add_format({'bg_color': '#FFCC80'})
-        red = workbook.add_format({'bg_color': '#FF8A80'})
-
-        over_col = df_route.columns.get_loc("Over")
-        cluster_col = df_route.columns.get_loc("Kode_Pos_Cluster")
-
-        for row in range(len(df_route)):
-            val = df_route.iloc[row]["Over"]
-
-            if 8 <= val <= 15:
-                ws2.write(row+1, over_col, val, yellow)
-            elif 16 <= val <= 22:
-                ws2.write(row+1, over_col, val, orange)
-            elif 23 <= val <= 30:
-                ws2.write(row+1, over_col, val, red)
-
-        start_row = 0
-        while start_row < len(df_route):
-            kode = df_route.iloc[start_row]["Kd_Pos"]
-            end_row = start_row
-
-            while end_row + 1 < len(df_route) and df_route.iloc[end_row+1]["Kd_Pos"] == kode:
-                end_row += 1
-
-            ws2.merge_range(start_row+1, cluster_col, end_row+1, cluster_col, kode, bold_center)
-            start_row = end_row + 1
+        df_route.to_excel(writer, index=False, sheet_name='Route')
+        top_global.to_excel(writer, index=False, sheet_name='Top_Priority')
 
         writer.close()
         return output.getvalue()
 
-    excel_file = convert_to_excel(df_full, df_route)
+    excel_file = convert_to_excel(df_full, df_route, top_global)
 
     st.download_button(
         label="⬇️ Download Excel Report",
         data=excel_file,
-        file_name=f"AR_Report_{pd.Timestamp.today().date()}.xlsx",
+        file_name=f"AR_Report.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
     # =========================
-    # EXPANDABLE CLUSTER
+    # CLUSTER VIEW
     # =========================
-    st.subheader("📊 Full Data per Kode Pos")
+    st.subheader("📊 Data per Kode Pos")
 
     grouped = df_full.groupby("Kd_Pos")
     sorted_groups = sorted(grouped, key=lambda x: x[1]["Saldo"].sum(), reverse=True)
@@ -221,11 +225,7 @@ if file is not None:
         total_account = len(group)
         total_saldo = group["Saldo"].sum()
 
-        with st.expander(f"📍 {kode_pos} | {total_account} Account | Saldo {total_saldo:,.0f}"):
-
-            col1, col2 = st.columns(2)
-            col1.metric("Account", total_account)
-            col2.metric("Saldo", f"{total_saldo:,.0f}")
+        with st.expander(f"{kode_pos} | {total_account} Account | Saldo {total_saldo:,.0f}"):
 
             st.markdown("🔥 Top Priority")
             top_group = group.sort_values(by="Priority", ascending=False).head(5)
@@ -235,7 +235,7 @@ if file is not None:
             st.dataframe(group, use_container_width=True)
 
     # =========================
-    # ROUTE TABLE
+    # ROUTE
     # =========================
     st.subheader("🚗 Rute Kunjungan")
 
