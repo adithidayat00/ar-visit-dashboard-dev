@@ -10,7 +10,9 @@ st.set_page_config(page_title="AR Visit Optimization", layout="wide")
 # =========================
 # LOGIN
 # =========================
-PASSWORD = "Password1100!"  # GANTI SESUAI LO
+import os
+
+PASSWORD = os.getenv("APP_PASSWORD")
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
