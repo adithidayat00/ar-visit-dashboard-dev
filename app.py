@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
+import os
 
 # =========================
 # CONFIG
@@ -10,17 +11,13 @@ st.set_page_config(page_title="AR Visit Optimization", layout="wide")
 # =========================
 # LOGIN
 # =========================
-import os
-
 PASSWORD = os.getenv("APP_PASSWORD")
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
 if not st.session_state.authenticated:
-
     st.title("🔐 Login Required")
-
     pwd = st.text_input("Enter Password", type="password")
 
     if st.button("Login"):
@@ -29,7 +26,6 @@ if not st.session_state.authenticated:
             st.rerun()
         else:
             st.error("Password salah")
-
     st.stop()
 
 # =========================
@@ -179,16 +175,27 @@ if file is not None:
     chart_data = df_full.groupby("Kd_Pos")["Saldo"].sum().sort_values(ascending=False)
     st.bar_chart(chart_data)
 
-    st.subheader("📊 Aging Distribution")
-    st.bar_chart(df_full["Aging"].value_counts())
-
     # =========================
-    # TOP PRIORITY
+    # TOP PRIORITY (UPDATED)
     # =========================
-    st.subheader("🔥 Top 20 Priority")
+    st.subheader("🔥 Top 100 Priority")
 
-    top_global = df_full.sort_values(by="Priority", ascending=False).head(20)
-    st.dataframe(top_global, use_container_width=True)
+    top_global = (
+        df_full
+        .sort_values(by="Priority", ascending=False)
+        .head(100)
+        .reset_index(drop=True)
+    )
+
+    # tambah ranking
+    top_global.index += 1
+    top_global.index.name = "Rank"
+
+    st.dataframe(
+        top_global,
+        use_container_width=True,
+        height=600
+    )
 
     # =========================
     # EXPORT
@@ -200,7 +207,7 @@ if file is not None:
 
         df_full.to_excel(writer, index=False, sheet_name='Full_Data')
         df_route.to_excel(writer, index=False, sheet_name='Route')
-        top_global.to_excel(writer, index=False, sheet_name='Top_Priority')
+        top_global.to_excel(writer, index=True, sheet_name='Top_Priority')
 
         writer.close()
         return output.getvalue()
